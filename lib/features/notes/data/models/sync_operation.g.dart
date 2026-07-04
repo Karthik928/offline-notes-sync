@@ -1,58 +1,44 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'note.dart';
+part of 'sync_operation.dart';
 
 // **************************************************************************
 // TypeAdapterGenerator
 // **************************************************************************
 
-class NoteAdapter extends TypeAdapter<Note> {
+class SyncOperationAdapter extends TypeAdapter<SyncOperation> {
   @override
-  final typeId = 0;
+  final typeId = 2;
 
   @override
-  Note read(BinaryReader reader) {
+  SyncOperation read(BinaryReader reader) {
     final numOfFields = reader.readByte();
     final fields = <int, dynamic>{
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
-    return Note(
+    return SyncOperation(
       id: fields[0] as String,
-      title: fields[1] as String,
-      body: fields[2] as String,
+      noteId: fields[1] as String,
+      action: fields[2] as SyncAction,
       createdAt: fields[3] as DateTime,
-      updatedAt: fields[4] as DateTime,
-      lastSyncedAt: fields[5] as DateTime?,
-      syncStatus: fields[6] == null
-          ? SyncStatus.pending
-          : fields[6] as SyncStatus,
-      isDeleted: fields[7] == null ? false : fields[7] as bool,
-      serverId: fields[8] as String?,
+      retryCount: fields[4] == null ? 0 : (fields[4] as num).toInt(),
     );
   }
 
   @override
-  void write(BinaryWriter writer, Note obj) {
+  void write(BinaryWriter writer, SyncOperation obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(5)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
-      ..write(obj.title)
+      ..write(obj.noteId)
       ..writeByte(2)
-      ..write(obj.body)
+      ..write(obj.action)
       ..writeByte(3)
       ..write(obj.createdAt)
       ..writeByte(4)
-      ..write(obj.updatedAt)
-      ..writeByte(5)
-      ..write(obj.lastSyncedAt)
-      ..writeByte(6)
-      ..write(obj.syncStatus)
-      ..writeByte(7)
-      ..write(obj.isDeleted)
-      ..writeByte(8)
-      ..write(obj.serverId);
+      ..write(obj.retryCount);
   }
 
   @override
@@ -61,7 +47,7 @@ class NoteAdapter extends TypeAdapter<Note> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is NoteAdapter &&
+      other is SyncOperationAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

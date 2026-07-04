@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:offline_notes_sync/features/notes/presentation/widgets/notes_search_delegate.dart';
 
 import '../../data/models/note.dart';
 import '../../data/models/sync_status.dart';
 import '../providers/notes_provider.dart';
+
+import 'add_edit_note_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -13,7 +16,21 @@ class HomeScreen extends ConsumerWidget {
     final notes = ref.watch(notesProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Offline Notes"), centerTitle: true),
+      appBar: AppBar(
+        title: const Text("Offline Notes"),
+        actions: [
+          IconButton(
+            onPressed: () {
+              showSearch(
+                context: context,
+                delegate: NotesSearchDelegate(notes),
+              );
+            },
+            icon: const Icon(Icons.search),
+          ),
+        ],
+        centerTitle: true,
+      ),
 
       body: notes.isEmpty
           ? const _EmptyView()
@@ -27,8 +44,13 @@ class HomeScreen extends ConsumerWidget {
             ),
 
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          // Batch 2C
+        onPressed: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddEditNoteScreen()),
+          );
+
+          ref.read(notesProvider.notifier).load();
         },
         icon: const Icon(Icons.add),
         label: const Text("Note"),
@@ -125,11 +147,38 @@ class _NoteCard extends ConsumerWidget {
           ],
           onSelected: (value) async {
             if (value == "delete") {
-              await ref.read(notesProvider.notifier).delete(note.id);
+              final delete = await showDialog<bool>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text("Delete Note"),
+                  content: const Text("Are you sure?"),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text("Cancel"),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text("Delete"),
+                    ),
+                  ],
+                ),
+              );
+
+              if (delete == true) {
+                await ref.read(notesProvider.notifier).delete(note.id);
+              }
             }
 
             if (value == "edit") {
-              // Batch 2C
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AddEditNoteScreen(note: note),
+                ),
+              );
+
+              ref.read(notesProvider.notifier).load();
             }
           },
         ),

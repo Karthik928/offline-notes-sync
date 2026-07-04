@@ -4,11 +4,15 @@
 
 import 'package:hive_ce/hive_ce.dart';
 import 'package:offline_notes_sync/features/notes/data/models/note.dart';
+import 'package:offline_notes_sync/features/notes/data/models/sync_action.dart';
+import 'package:offline_notes_sync/features/notes/data/models/sync_operation.dart';
 import 'package:offline_notes_sync/features/notes/data/models/sync_status.dart';
 
 extension HiveRegistrar on HiveInterface {
   void registerAdapters() {
     registerAdapter(NoteAdapter());
+    registerAdapter(SyncActionAdapter());
+    registerAdapter(SyncOperationAdapter());
     registerAdapter(SyncStatusAdapter());
   }
 }
@@ -16,6 +20,8 @@ extension HiveRegistrar on HiveInterface {
 extension IsolatedHiveRegistrar on IsolatedHiveInterface {
   void registerAdapters() {
     registerAdapter(NoteAdapter());
+    registerAdapter(SyncActionAdapter());
+    registerAdapter(SyncOperationAdapter());
     registerAdapter(SyncStatusAdapter());
   }
 }

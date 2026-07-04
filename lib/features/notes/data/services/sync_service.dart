@@ -159,5 +159,55 @@ class SyncService {
       _isSyncing = false;
       onSyncComplete?.call();
     }
+    await pullFromServer();
+  }
+
+  Future<void> pullFromServer() async {
+    final serverNotes = await api.fetchNotes();
+
+    final notesBox = HiveService.noteBox;
+    debugPrint("Hive Count: ${notesBox.length}");
+
+    for (final n in notesBox.values) {
+      debugPrint("${n.title} - ${n.id}");
+    }
+    debugPrint("Pulling ${serverNotes.length} notes from server");
+    for (final json in serverNotes) {
+      final localId = json["localId"] as String;
+
+      final localNote = notesBox.get(localId);
+      debugPrint("Checking server note: ${json["title"]}");
+      if (localNote == null) {
+        final note = Note(
+          id: localId,
+          serverId: json["id"],
+          title: json["title"],
+          body: json["body"],
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.parse(json["updatedAt"]),
+          lastSyncedAt: DateTime.now(),
+          syncStatus: SyncStatus.synced,
+          isDeleted: json["isDeleted"] ?? false,
+        );
+
+        await notesBox.put(note.id, note);
+        continue;
+      }
+
+      final serverUpdated = DateTime.parse(json["updatedAt"]);
+      debugPrint("Updated local note from server");
+      if (serverUpdated.isAfter(localNote.updatedAt)) {
+        localNote.title = json["title"];
+        localNote.body = json["body"];
+        localNote.updatedAt = serverUpdated;
+        localNote.serverId = json["id"];
+        localNote.syncStatus = SyncStatus.synced;
+        localNote.lastSyncedAt = DateTime.now();
+
+        await localNote.save();
+      }
+    }
+
+    onSyncComplete?.call();
   }
 }

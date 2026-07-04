@@ -24,9 +24,15 @@ class OfflineNotesApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'OFFLINE NOTES TEST 123',
+      title: 'Offline Notes',
       themeMode: ThemeMode.system,
-      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.indigo,
+        scaffoldBackgroundColor: const Color(0xFFF7F8FF),
+        appBarTheme: const AppBarTheme(centerTitle: false, elevation: 0),
+        cardTheme: CardThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+      ),
       home: const HomeScreen(),
     );
   }

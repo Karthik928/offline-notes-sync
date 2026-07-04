@@ -15,6 +15,11 @@ class ApiClient {
     return response.data;
   }
 
+  Future<List<dynamic>> fetchNotes() async {
+  final response = await dio.get("/notes");
+  return response.data as List<dynamic>;
+}
+
   Future<Response> createNote(Map<String, dynamic> body) {
     return dio.post("/notes", data: body);
   }

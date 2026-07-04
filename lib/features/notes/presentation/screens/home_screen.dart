@@ -1,6 +1,7 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:offline_notes_sync/features/notes/data/services/sync_service.dart';
 import 'package:offline_notes_sync/features/notes/presentation/widgets/notes_search_delegate.dart';
 
@@ -9,6 +10,27 @@ import '../../data/models/sync_status.dart';
 import '../providers/notes_provider.dart';
 
 import 'add_edit_note_screen.dart';
+
+/// Fixed brand palette for the notepad look — deep teal chrome over a warm
+/// ivory list. Not derived from Theme.of(context) on purpose: this screen's
+/// colors are a deliberate identity, not a Material color scheme.
+///
+/// If this palette ends up reused on other screens, pull it out into its own
+/// AppColors file the same way the rider app does.
+class _NotesPalette {
+  static const appBar = Color(0xFF1B6E64);
+  static const appBarSubtitle = Color(0xFFCFE8E3);
+  static const background = Color(0xFFF4F1E6);
+  static const divider = Color(0xFF1D2F2C);
+  static const title = Color(0xFF1B2B28);
+  static const body = Color(0xFF5C6D69);
+  static const timestamp = Color(0xFF7A8B87);
+  static const synced = Color(0xFF2F7D4A);
+  static const pending = Color(0xFFA8681E);
+  static const conflict = Color(0xFFA23B32);
+  static const edit = Color(0xFF4C7A72);
+  static const delete = Color(0xFFA23B32);
+}
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -47,10 +69,27 @@ class HomeScreen extends ConsumerWidget {
     }
   }
 
+  String _summaryLine(int total, int pending, int conflict) {
+    final parts = <String>['$total ${total == 1 ? 'note' : 'notes'}'];
+
+    if (pending > 0) {
+      parts.add('$pending pending');
+    }
+
+    if (conflict > 0) {
+      parts.add('$conflict conflict${conflict == 1 ? '' : 's'}');
+    }
+
+    if (pending == 0 && conflict == 0 && total > 0) {
+      parts.add('all synced');
+    }
+
+    return parts.join(' \u00B7 ');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notes = ref.watch(notesProvider);
-    final theme = Theme.of(context);
 
     final pendingCount = notes
         .where((note) => note.syncStatus == SyncStatus.pending)
@@ -60,16 +99,34 @@ class HomeScreen extends ConsumerWidget {
         .length;
 
     return Scaffold(
+      backgroundColor: _NotesPalette.background,
       appBar: AppBar(
-        title: Text(
-          'Offline Notes',
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        centerTitle: false,
+        backgroundColor: _NotesPalette.appBar,
         elevation: 0,
-        scrolledUnderElevation: 1,
+        toolbarHeight: 72,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'Offline notes',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 19,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              _summaryLine(notes.length, pendingCount, conflictCount),
+              style: const TextStyle(
+                color: _NotesPalette.appBarSubtitle,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             onPressed: () {
@@ -90,41 +147,30 @@ class HomeScreen extends ConsumerWidget {
       ),
       body: RefreshIndicator(
         onRefresh: () => _handleSync(context, ref),
-        child: notes.isEmpty
-            ? ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                children: const [
-                  SizedBox(height: 48),
-                  _EmptyView(),
-                  SizedBox(height: 48),
-                ],
-              )
-            : CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: _SyncStatusBar(
-                      totalCount: notes.length,
-                      pendingCount: pendingCount,
-                      conflictCount: conflictCount,
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final note = notes[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _AnimatedNoteCard(note: note),
-                        );
-                      }, childCount: notes.length),
-                    ),
-                  ),
-                ],
-              ),
+        child: Container(
+          color: _NotesPalette.background,
+          child: notes.isEmpty
+              ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: const [
+                    SizedBox(height: 48),
+                    _EmptyView(),
+                    SizedBox(height: 48),
+                  ],
+                )
+              : ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.only(bottom: 96),
+                  itemCount: notes.length,
+                  itemBuilder: (context, index) {
+                    final note = notes[index];
+                    return _AnimatedNoteRow(note: note);
+                  },
+                ),
+        ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: _NotesPalette.appBar,
         onPressed: () async {
           await Navigator.push(
             context,
@@ -133,119 +179,8 @@ class HomeScreen extends ConsumerWidget {
 
           ref.read(notesProvider.notifier).load();
         },
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('New note'),
+        child: const Icon(Icons.add_rounded, color: Colors.white),
       ),
-    );
-  }
-}
-
-/// A single glanceable line summarizing sync state — replaces the previous
-/// 4-card stat grid, which wrapped awkwardly on narrow screens and competed
-/// with the notes list for attention.
-class _SyncStatusBar extends StatelessWidget {
-  final int totalCount;
-  final int pendingCount;
-  final int conflictCount;
-
-  const _SyncStatusBar({
-    required this.totalCount,
-    required this.pendingCount,
-    required this.conflictCount,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final allSynced = pendingCount == 0 && conflictCount == 0 && totalCount > 0;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        border: Border(
-          bottom: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.sticky_note_2_rounded,
-            size: 16,
-            color: colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            '$totalCount ${totalCount == 1 ? 'note' : 'notes'}',
-            style: textTheme.labelLarge?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (pendingCount > 0) ...[
-            const SizedBox(width: 16),
-            _StatusDot(color: Colors.orange.shade700),
-            const SizedBox(width: 6),
-            Text(
-              '$pendingCount pending',
-              style: textTheme.labelLarge?.copyWith(
-                color: Colors.orange.shade700,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          if (conflictCount > 0) ...[
-            const SizedBox(width: 16),
-            _StatusDot(color: colorScheme.error),
-            const SizedBox(width: 6),
-            Text(
-              '$conflictCount need attention',
-              style: textTheme.labelLarge?.copyWith(
-                color: colorScheme.error,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          const Spacer(),
-          if (allSynced)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.check_circle_rounded,
-                  size: 14,
-                  color: Colors.green.shade700,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'All synced',
-                  style: textTheme.labelMedium?.copyWith(
-                    color: Colors.green.shade700,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusDot extends StatelessWidget {
-  final Color color;
-
-  const _StatusDot({required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }
@@ -255,8 +190,6 @@ class _EmptyView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -267,32 +200,35 @@ class _EmptyView extends StatelessWidget {
               width: 104,
               height: 104,
               decoration: BoxDecoration(
-                color: colorScheme.primaryContainer,
+                color: _NotesPalette.appBar.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
+              child: const Icon(
                 Icons.sticky_note_2_outlined,
                 size: 56,
-                color: colorScheme.onPrimaryContainer,
+                color: _NotesPalette.appBar,
               ),
             ),
             const SizedBox(height: 24),
-            Text(
-              'No Notes Yet',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+            const Text(
+              'No notes yet',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: _NotesPalette.title,
+              ),
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Create your first note. Notes automatically sync when online.',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 15, color: _NotesPalette.body),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: _NotesPalette.appBar,
+              ),
               onPressed: () async {
                 await Navigator.push(
                   context,
@@ -300,7 +236,7 @@ class _EmptyView extends StatelessWidget {
                 );
               },
               icon: const Icon(Icons.add_rounded),
-              label: const Text('Create Note'),
+              label: const Text('Create note'),
             ),
           ],
         ),
@@ -309,16 +245,16 @@ class _EmptyView extends StatelessWidget {
   }
 }
 
-class _AnimatedNoteCard extends ConsumerStatefulWidget {
+class _AnimatedNoteRow extends ConsumerStatefulWidget {
   final Note note;
 
-  const _AnimatedNoteCard({required this.note});
+  const _AnimatedNoteRow({required this.note});
 
   @override
-  ConsumerState<_AnimatedNoteCard> createState() => _AnimatedNoteCardState();
+  ConsumerState<_AnimatedNoteRow> createState() => _AnimatedNoteRowState();
 }
 
-class _AnimatedNoteCardState extends ConsumerState<_AnimatedNoteCard>
+class _AnimatedNoteRowState extends ConsumerState<_AnimatedNoteRow>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _fadeAnimation;
@@ -351,11 +287,11 @@ class _AnimatedNoteCardState extends ConsumerState<_AnimatedNoteCard>
   Color _statusColor(SyncStatus status) {
     switch (status) {
       case SyncStatus.synced:
-        return Colors.green.shade700;
+        return _NotesPalette.synced;
       case SyncStatus.pending:
-        return Colors.orange.shade700;
+        return _NotesPalette.pending;
       case SyncStatus.conflict:
-        return Colors.red.shade700;
+        return _NotesPalette.conflict;
     }
   }
 
@@ -370,20 +306,8 @@ class _AnimatedNoteCardState extends ConsumerState<_AnimatedNoteCard>
     }
   }
 
-  String _statusLabel(SyncStatus status) {
-    switch (status) {
-      case SyncStatus.synced:
-        return 'Synced';
-      case SyncStatus.pending:
-        return 'Pending';
-      case SyncStatus.conflict:
-        return 'Conflict';
-    }
-  }
-
   String _formatDate(DateTime date) {
-    final local = date.toLocal();
-    return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year} ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    return DateFormat('M/d/yy, h:mm a').format(date.toLocal());
   }
 
   Future<void> _handleDelete() async {
@@ -421,152 +345,112 @@ class _AnimatedNoteCardState extends ConsumerState<_AnimatedNoteCard>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     final statusColor = _statusColor(widget.note.syncStatus);
 
     return FadeTransition(
       opacity: _fadeAnimation,
       child: SlideTransition(
         position: _slideAnimation,
-        child: Card(
-          elevation: 0,
-          color: colorScheme.surfaceContainerLow,
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+        child: Container(
+          decoration: const BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: _NotesPalette.divider, width: 1.5),
             ),
           ),
-          child: InkWell(
-            onTap: _handleEdit,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.note.title.isEmpty
-                                  ? 'Untitled note'
-                                  : widget.note.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              widget.note.body.isEmpty
-                                  ? 'No content yet'
-                                  : widget.note.body,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      PopupMenuButton<String>(
-                        icon: Icon(
-                          Icons.more_horiz_rounded,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                        onSelected: (value) async {
-                          if (value == 'edit') {
-                            await _handleEdit();
-                          } else if (value == 'delete') {
-                            await _handleDelete();
-                          }
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'edit', child: Text('Edit')),
-                          PopupMenuItem(value: 'delete', child: Text('Delete')),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.schedule_rounded,
-                        size: 16,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Updated ${_formatDate(widget.note.updatedAt)}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const Spacer(),
-                      Builder(
-                        builder: (context) {
-                          // "Synced" is the default, expected state — giving it
-                          // the same bold color treatment as Pending/Conflict on
-                          // every single card is just noise once the summary bar
-                          // already says "All synced". Only states that need the
-                          // user's attention get the loud filled badge.
-                          final needsAttention =
-                              widget.note.syncStatus != SyncStatus.synced;
-                          final badgeColor = needsAttention
-                              ? statusColor
-                              : colorScheme.onSurfaceVariant;
-
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: needsAttention
-                                  ? statusColor.withValues(alpha: 0.14)
-                                  : null,
-                              border: needsAttention
-                                  ? null
-                                  : Border.all(
-                                      color: colorScheme.outlineVariant,
-                                    ),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _statusIcon(widget.note.syncStatus),
-                                  size: 14,
-                                  color: badgeColor,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  _statusLabel(widget.note.syncStatus),
-                                  style: theme.textTheme.labelMedium?.copyWith(
-                                    color: badgeColor,
-                                    fontWeight: needsAttention
-                                        ? FontWeight.w700
-                                        : FontWeight.w600,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _handleEdit,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  widget.note.title.isEmpty
+                                      ? 'Untitled note'
+                                      : widget.note.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
+                                    color: _NotesPalette.title,
                                   ),
                                 ),
-                              ],
-                            ),
-                          );
-                        },
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(
+                                _statusIcon(widget.note.syncStatus),
+                                size: 15,
+                                color: statusColor,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: _handleEdit,
+                          icon: const Icon(Icons.edit_outlined),
+                          iconSize: 19,
+                          color: _NotesPalette.edit,
+                          tooltip: 'Edit note',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: _handleDelete,
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          iconSize: 19,
+                          color: _NotesPalette.delete,
+                          tooltip: 'Delete note',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.note.body.isEmpty
+                          ? 'No content yet'
+                          : widget.note.body,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        color: _NotesPalette.body,
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        'Last edit: ${_formatDate(widget.note.updatedAt)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                          color: _NotesPalette.timestamp,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

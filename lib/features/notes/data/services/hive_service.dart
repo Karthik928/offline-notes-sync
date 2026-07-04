@@ -1,10 +1,8 @@
 import 'package:hive_ce_flutter/hive_flutter.dart';
-import 'package:offline_notes_sync/features/notes/data/models/sync_status.dart';
 import 'package:offline_notes_sync/hive_registrar.g.dart';
 
 import '../../data/models/note.dart';
 
-import '../../data/models/sync_action.dart';
 import '../../data/models/sync_operation.dart';
 
 class HiveService {

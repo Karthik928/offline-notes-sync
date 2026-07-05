@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../models/note.dart';
+import '../models/sync_status.dart';
 
 class NotesRepository {
   final box = HiveService.noteBox;
@@ -19,7 +20,9 @@ class NotesRepository {
   }
 
   List<Note> getNotes() {
-    return box.values.where((e) => !e.isDeleted).toList()
+    return box.values
+        .where((e) => !e.isDeleted || e.syncStatus == SyncStatus.conflict)
+        .toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   }
 
@@ -56,8 +59,16 @@ class NotesRepository {
 
     if (note == null) return;
 
+    if (note.serverId == null) {
+      await queue.removeForNote(id);
+      await box.delete(id);
+      await SyncService.instance.sync();
+      return;
+    }
+
     note.isDeleted = true;
     note.updatedAt = DateTime.now();
+    note.syncStatus = SyncStatus.pending;
 
     await note.save();
     await queue.add(

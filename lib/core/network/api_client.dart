@@ -10,15 +10,25 @@ class ApiClient {
     ),
   );
 
+  List<dynamic> _readNotesList(dynamic data) {
+    if (data is List) {
+      return data;
+    }
+
+    throw FormatException(
+      'Expected /notes to return a JSON list but received ${data.runtimeType}.',
+    );
+  }
+
   Future<List<dynamic>> getNotes() async {
     final response = await dio.get("/notes");
-    return response.data;
+    return _readNotesList(response.data);
   }
 
   Future<List<dynamic>> fetchNotes() async {
-  final response = await dio.get("/notes");
-  return response.data as List<dynamic>;
-}
+    final response = await dio.get("/notes");
+    return _readNotesList(response.data);
+  }
 
   Future<Response> createNote(Map<String, dynamic> body) {
     return dio.post("/notes", data: body);

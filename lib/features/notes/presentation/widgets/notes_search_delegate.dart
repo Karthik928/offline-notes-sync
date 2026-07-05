@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../data/models/note.dart';
 import '../../data/models/sync_status.dart';
 
@@ -10,17 +11,21 @@ class NotesSearchDelegate extends SearchDelegate {
 
   @override
   List<Widget>? buildActions(BuildContext context) => [
-        IconButton(
-          onPressed: () => query = '',
-          icon: const Icon(Icons.clear_rounded),
-        ),
-      ];
+    IconButton(
+      onPressed: () => query = '',
+      icon: const Icon(Icons.clear_rounded),
+      tooltip: 'Clear search',
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+    ),
+  ];
 
   @override
   Widget? buildLeading(BuildContext context) {
     return IconButton(
       onPressed: () => close(context, null),
       icon: const Icon(Icons.arrow_back_rounded),
+      tooltip: 'Back',
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
     );
   }
 
@@ -39,11 +44,26 @@ class NotesSearchDelegate extends SearchDelegate {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.search_off_rounded, size: 56, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              const Icon(
+                Icons.search_off_rounded,
+                size: 56,
+                color: AppColors.textMuted,
+              ),
               const SizedBox(height: 12),
-              Text('No matches found', style: Theme.of(context).textTheme.titleMedium),
+              const Text(
+                'No matches found',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const SizedBox(height: 6),
-              Text('Try a different title or body text.', textAlign: TextAlign.center),
+              const Text(
+                'Try a different title or body text.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
             ],
           ),
         ),
@@ -53,7 +73,7 @@ class NotesSearchDelegate extends SearchDelegate {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: filtered.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (_, index) {
         final note = filtered[index];
         return _SearchResultCard(note: note);
@@ -73,22 +93,20 @@ class _SearchResultCard extends StatelessWidget {
   Color _statusColor(SyncStatus status) {
     switch (status) {
       case SyncStatus.synced:
-        return Colors.green.shade700;
+        return AppColors.success;
       case SyncStatus.pending:
-        return Colors.orange.shade700;
+        return AppColors.warning;
       case SyncStatus.conflict:
-        return Colors.red.shade700;
+        return AppColors.error;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     final statusColor = _statusColor(note.syncStatus);
 
     return Material(
-      color: colorScheme.surfaceContainerLow,
+      color: AppColors.background,
       borderRadius: BorderRadius.circular(18),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -102,18 +120,29 @@ class _SearchResultCard extends StatelessWidget {
                     note.title.isEmpty ? 'Untitled note' : note.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.12),
+                    color: statusColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     note.syncStatus.name.toUpperCase(),
-                    style: theme.textTheme.labelSmall?.copyWith(color: statusColor, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],
@@ -123,7 +152,10 @@ class _SearchResultCard extends StatelessWidget {
               note.body.isEmpty ? 'No content yet' : note.body,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
             ),
           ],
         ),

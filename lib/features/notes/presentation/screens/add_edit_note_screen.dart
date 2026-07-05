@@ -1,13 +1,11 @@
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:offline_notes_sync/features/notes/data/services/sync_service.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../data/models/note.dart';
 import '../../data/models/sync_status.dart';
 import '../providers/notes_provider.dart';
-import '../../data/services/sync_service.dart';
 
 class AddEditNoteScreen extends ConsumerStatefulWidget {
   final Note? note;
@@ -42,8 +40,7 @@ class _AddEditNoteScreenState extends ConsumerState<AddEditNoteScreen> {
 
     if (title.isEmpty && body.isEmpty) return;
 
-    final connectivity = await Connectivity().checkConnectivity();
-    final connected = connectivity.any((result) => result != ConnectivityResult.none);
+    late final String savedNoteId;
 
     if (widget.note == null) {
       final now = DateTime.now();
@@ -60,6 +57,7 @@ class _AddEditNoteScreenState extends ConsumerState<AddEditNoteScreen> {
       );
 
       await ref.read(notesProvider.notifier).add(note);
+      savedNoteId = note.id;
     } else {
       final updated = widget.note!.copyWith(
         title: title,
@@ -69,22 +67,21 @@ class _AddEditNoteScreenState extends ConsumerState<AddEditNoteScreen> {
       );
 
       await ref.read(notesProvider.notifier).update(updated);
+      savedNoteId = updated.id;
     }
 
     if (!mounted) return;
 
-    if (connected) {
-      await SyncService.instance.sync();
-      await SyncService.instance.pullFromServer();
-      ref.read(notesProvider.notifier).load();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Synced successfully')),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved locally. Will sync automatically.')),
-      );
-    }
+    ref.read(notesProvider.notifier).load();
+
+    final savedNote = ref.read(notesRepositoryProvider).getById(savedNoteId);
+    final message = savedNote?.syncStatus == SyncStatus.synced
+        ? 'Synced successfully'
+        : 'Saved locally. Will sync automatically.';
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
 
     Navigator.pop(context);
   }
@@ -92,7 +89,6 @@ class _AddEditNoteScreenState extends ConsumerState<AddEditNoteScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -113,14 +109,20 @@ class _AddEditNoteScreenState extends ConsumerState<AddEditNoteScreen> {
                 decoration: InputDecoration(
                   hintText: 'Title',
                   filled: true,
-                  fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.35),
+                  fillColor: AppColors.background.withValues(alpha: 0.9),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 16,
+                  ),
                 ),
-                style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
               ),
               const SizedBox(height: 16),
               Expanded(
@@ -133,13 +135,16 @@ class _AddEditNoteScreenState extends ConsumerState<AddEditNoteScreen> {
                   decoration: InputDecoration(
                     hintText: 'Write something...',
                     filled: true,
-                    fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.35),
+                    fillColor: AppColors.background.withValues(alpha: 0.9),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
                       borderSide: BorderSide.none,
                     ),
                     contentPadding: const EdgeInsets.all(16),
                     alignLabelWithHint: true,
+                  ),
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: AppColors.textPrimary,
                   ),
                 ),
               ),

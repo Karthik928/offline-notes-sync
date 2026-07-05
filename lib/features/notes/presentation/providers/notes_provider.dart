@@ -17,8 +17,6 @@ class NotesNotifier extends Notifier<List<Note>> {
   List<Note> build() {
     repository = ref.read(notesRepositoryProvider);
 
-    // Refresh state whenever a background sync (timer or connectivity
-    // change) completes, instead of only on manual .load() calls.
     SyncService.instance.onSyncComplete = load;
     ref.onDispose(() => SyncService.instance.onSyncComplete = null);
 

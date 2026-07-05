@@ -12,7 +12,6 @@ class HiveService {
   static Future<void> init() async {
     await Hive.initFlutter();
 
-    // Register all generated adapters
     Hive.registerAdapters();
 
     await Hive.openBox<Note>(notesBox);

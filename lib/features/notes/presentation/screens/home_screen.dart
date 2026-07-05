@@ -2,69 +2,71 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:offline_notes_sync/features/notes/data/services/conflict_service.dart';
 import 'package:offline_notes_sync/features/notes/data/services/sync_service.dart';
 import 'package:offline_notes_sync/features/notes/presentation/widgets/notes_search_delegate.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../data/models/note.dart';
 import '../../data/models/sync_status.dart';
 import '../providers/notes_provider.dart';
 
 import 'add_edit_note_screen.dart';
+import 'conflict_resolution_screen.dart';
 
-/// Fixed brand palette for the notepad look — deep teal chrome over a warm
-/// ivory list. Not derived from Theme.of(context) on purpose: this screen's
-/// colors are a deliberate identity, not a Material color scheme.
-///
-/// If this palette ends up reused on other screens, pull it out into its own
-/// AppColors file the same way the rider app does.
-class _NotesPalette {
-  static const appBar = Color(0xFF1B6E64);
-  static const appBarSubtitle = Color(0xFFCFE8E3);
-  static const background = Color(0xFFF4F1E6);
-  static const divider = Color(0xFF1D2F2C);
-  static const title = Color(0xFF1B2B28);
-  static const body = Color(0xFF5C6D69);
-  static const timestamp = Color(0xFF7A8B87);
-  static const synced = Color(0xFF2F7D4A);
-  static const pending = Color(0xFFA8681E);
-  static const conflict = Color(0xFFA23B32);
-  static const edit = Color(0xFF4C7A72);
-  static const delete = Color(0xFFA23B32);
-}
-
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
-  Future<void> _handleSync(
-    BuildContext context,
-    WidgetRef ref, {
-    bool showFeedback = true,
-  }) async {
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  bool _isSyncing = false;
+
+  Future<void> _handleSync({bool showFeedback = true}) async {
+    if (_isSyncing) return;
+
     final connectivity = await Connectivity().checkConnectivity();
     final connected = connectivity.any(
       (result) => result != ConnectivityResult.none,
     );
 
     if (!connected) {
-      if (showFeedback && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Saved locally. Will sync automatically.'),
-          ),
-        );
+      if (showFeedback && mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Saved locally. Will sync automatically.'),
+            ),
+          );
       }
       return;
     }
 
-    await SyncService.instance.sync();
-    await SyncService.instance.pullFromServer();
+    setState(() => _isSyncing = true);
 
-    if (context.mounted) {
-      ref.read(notesProvider.notifier).load();
-      if (showFeedback) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Synced successfully')));
+    try {
+      await SyncService.instance.sync();
+
+      if (mounted) {
+        ref.read(notesProvider.notifier).load();
+        if (showFeedback) {
+          final hasConflicts = ref
+              .read(notesProvider)
+              .any((note) => note.syncStatus == SyncStatus.conflict);
+          final message = hasConflicts
+              ? 'Sync paused. Resolve conflicts to continue.'
+              : 'Synced successfully';
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(SnackBar(content: Text(message)));
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncing = false);
       }
     }
   }
@@ -88,7 +90,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final notes = ref.watch(notesProvider);
 
     final pendingCount = notes
@@ -99,29 +101,20 @@ class HomeScreen extends ConsumerWidget {
         .length;
 
     return Scaffold(
-      backgroundColor: _NotesPalette.background,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: _NotesPalette.appBar,
         elevation: 0,
         toolbarHeight: 72,
-        iconTheme: const IconThemeData(color: Colors.white),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text(
-              'Offline notes',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 19,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            const Text('Offline notes'),
             const SizedBox(height: 2),
             Text(
               _summaryLine(notes.length, pendingCount, conflictCount),
               style: const TextStyle(
-                color: _NotesPalette.appBarSubtitle,
+                color: AppColors.onPrimaryMuted,
                 fontSize: 12,
               ),
             ),
@@ -137,18 +130,37 @@ class HomeScreen extends ConsumerWidget {
             },
             icon: const Icon(Icons.search_rounded),
             tooltip: 'Search notes',
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           ),
-          IconButton(
-            onPressed: () => _handleSync(context, ref),
-            icon: const Icon(Icons.sync_rounded),
-            tooltip: 'Sync notes',
-          ),
+          _isSyncing
+              ? const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.onPrimary,
+                      ),
+                    ),
+                  ),
+                )
+              : IconButton(
+                  onPressed: _handleSync,
+                  icon: const Icon(Icons.sync_rounded),
+                  tooltip: 'Sync notes',
+                  constraints: const BoxConstraints(
+                    minWidth: 48,
+                    minHeight: 48,
+                  ),
+                ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () => _handleSync(context, ref),
+        onRefresh: _handleSync,
         child: Container(
-          color: _NotesPalette.background,
+          color: AppColors.background,
           child: notes.isEmpty
               ? ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
@@ -170,7 +182,6 @@ class HomeScreen extends ConsumerWidget {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: _NotesPalette.appBar,
         onPressed: () async {
           await Navigator.push(
             context,
@@ -179,7 +190,7 @@ class HomeScreen extends ConsumerWidget {
 
           ref.read(notesProvider.notifier).load();
         },
-        child: const Icon(Icons.add_rounded, color: Colors.white),
+        child: const Icon(Icons.add_rounded),
       ),
     );
   }
@@ -200,13 +211,13 @@ class _EmptyView extends StatelessWidget {
               width: 104,
               height: 104,
               decoration: BoxDecoration(
-                color: _NotesPalette.appBar.withValues(alpha: 0.12),
+                color: AppColors.primary.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.sticky_note_2_outlined,
                 size: 56,
-                color: _NotesPalette.appBar,
+                color: AppColors.primary,
               ),
             ),
             const SizedBox(height: 24),
@@ -215,20 +226,17 @@ class _EmptyView extends StatelessWidget {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: _NotesPalette.title,
+                color: AppColors.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
             const Text(
               'Create your first note. Notes automatically sync when online.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 15, color: _NotesPalette.body),
+              style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: _NotesPalette.appBar,
-              ),
               onPressed: () async {
                 await Navigator.push(
                   context,
@@ -287,11 +295,11 @@ class _AnimatedNoteRowState extends ConsumerState<_AnimatedNoteRow>
   Color _statusColor(SyncStatus status) {
     switch (status) {
       case SyncStatus.synced:
-        return _NotesPalette.synced;
+        return AppColors.success;
       case SyncStatus.pending:
-        return _NotesPalette.pending;
+        return AppColors.warning;
       case SyncStatus.conflict:
-        return _NotesPalette.conflict;
+        return AppColors.error;
     }
   }
 
@@ -335,6 +343,38 @@ class _AnimatedNoteRowState extends ConsumerState<_AnimatedNoteRow>
   }
 
   Future<void> _handleEdit() async {
+    if (widget.note.syncStatus == SyncStatus.conflict) {
+      var conflict = ConflictService.getForNote(widget.note.id);
+
+      if (conflict == null) {
+        await SyncService.instance.sync();
+        if (!mounted) return;
+        ref.read(notesProvider.notifier).load();
+        conflict = ConflictService.getForNote(widget.note.id);
+      }
+
+      final resolvedConflict = conflict;
+      if (resolvedConflict != null) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                ConflictResolutionScreen(conflict: resolvedConflict),
+          ),
+        );
+
+        ref.read(notesProvider.notifier).load();
+        return;
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Connect to reload conflict details.')),
+        );
+      return;
+    }
+
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => AddEditNoteScreen(note: widget.note)),
@@ -354,11 +394,11 @@ class _AnimatedNoteRowState extends ConsumerState<_AnimatedNoteRow>
         child: Container(
           decoration: const BoxDecoration(
             border: Border(
-              bottom: BorderSide(color: _NotesPalette.divider, width: 1.5),
+              bottom: BorderSide(color: AppColors.divider, width: 1.5),
             ),
           ),
           child: Material(
-            color: Colors.transparent,
+            color: AppColors.transparent,
             child: InkWell(
               onTap: _handleEdit,
               child: Padding(
@@ -386,7 +426,7 @@ class _AnimatedNoteRowState extends ConsumerState<_AnimatedNoteRow>
                                   style: const TextStyle(
                                     fontSize: 17,
                                     fontWeight: FontWeight.w700,
-                                    color: _NotesPalette.title,
+                                    color: AppColors.textPrimary,
                                   ),
                                 ),
                               ),
@@ -403,7 +443,7 @@ class _AnimatedNoteRowState extends ConsumerState<_AnimatedNoteRow>
                           onPressed: _handleEdit,
                           icon: const Icon(Icons.edit_outlined),
                           iconSize: 19,
-                          color: _NotesPalette.edit,
+                          color: AppColors.editAccent,
                           tooltip: 'Edit note',
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(
@@ -415,7 +455,7 @@ class _AnimatedNoteRowState extends ConsumerState<_AnimatedNoteRow>
                           onPressed: _handleDelete,
                           icon: const Icon(Icons.delete_outline_rounded),
                           iconSize: 19,
-                          color: _NotesPalette.delete,
+                          color: AppColors.error,
                           tooltip: 'Delete note',
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(
@@ -434,18 +474,28 @@ class _AnimatedNoteRowState extends ConsumerState<_AnimatedNoteRow>
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 13.5,
-                        color: _NotesPalette.body,
+                        color: AppColors.textSecondary,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        'Last edit: ${_formatDate(widget.note.updatedAt)}',
-                        style: const TextStyle(
+                        widget.note.syncStatus == SyncStatus.conflict
+                            ? 'Tap to resolve conflict'
+                            : 'Last edit: ${_formatDate(widget.note.updatedAt)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
                           fontSize: 12,
                           fontStyle: FontStyle.italic,
-                          color: _NotesPalette.timestamp,
+                          fontWeight:
+                              widget.note.syncStatus == SyncStatus.conflict
+                              ? FontWeight.w700
+                              : FontWeight.normal,
+                          color: widget.note.syncStatus == SyncStatus.conflict
+                              ? AppColors.error
+                              : AppColors.textMuted,
                         ),
                       ),
                     ),

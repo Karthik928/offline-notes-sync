@@ -1,30 +1,65 @@
-// // This is a basic Flutter widget test.
-// //
-// // To perform an interaction with a widget in your test, use the WidgetTester
-// // utility in the flutter_test package. For example, you can send tap and scroll
-// // gestures. You can also use WidgetTester to find child widgets in the widget
-// // tree, read text, and verify that the values of widget properties are correct.
+import 'dart:io';
 
-// import 'package:flutter/material.dart';
-// import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:hive_ce/src/adapters/date_time_adapter.dart';
+import 'package:offline_notes_sync/features/notes/data/models/sync_action.dart';
+import 'package:offline_notes_sync/features/notes/data/models/sync_operation.dart';
+import 'package:offline_notes_sync/features/notes/data/services/queue_service.dart';
+import 'package:offline_notes_sync/features/notes/data/services/sync_service.dart';
+import 'package:offline_notes_sync/hive_registrar.g.dart';
 
-// import 'package:offline_notes_sync/main.dart';
+void main() {
+  late Directory tempDir;
 
-// void main() {
-//   testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-//     // Build our app and trigger a frame.
-//     await tester.pumpWidget(const MyApp());
+  setUp(() async {
+    tempDir = await Directory.systemTemp.createTemp('offline_notes_sync_test');
+    Hive.init(tempDir.path);
+    Hive.resetAdapters();
+    Hive.registerAdapter(DateTimeAdapter());
+    Hive.registerAdapters();
+    await Hive.openBox<SyncOperation>('operations');
+  });
 
-//     // Verify that our counter starts at 0.
-//     expect(find.text('0'), findsOneWidget);
-//     expect(find.text('1'), findsNothing);
+  tearDown(() async {
+    await Hive.close();
+    if (tempDir.existsSync()) {
+      await tempDir.delete(recursive: true);
+    }
+  });
 
-//     // Tap the '+' icon and trigger a frame.
-//     await tester.tap(find.byIcon(Icons.add));
-//     await tester.pump();
+  test('sync notifies listeners even when the device is offline', () async {
+    final syncService = SyncService(connectivityCheck: () async => false);
+    var notified = false;
 
-//     // Verify that our counter has incremented.
-//     expect(find.text('0'), findsNothing);
-//     expect(find.text('1'), findsOneWidget);
-//   });
-// }
+    syncService.onSyncComplete = () => notified = true;
+
+    await syncService.sync();
+
+    expect(notified, isTrue);
+  });
+
+  test('queue deduplicates repeated updates for the same note', () async {
+    final queue = QueueService();
+
+    final first = SyncOperation(
+      id: 'op-1',
+      noteId: 'note-1',
+      action: SyncAction.update,
+      createdAt: DateTime(2024),
+    );
+    final second = SyncOperation(
+      id: 'op-2',
+      noteId: 'note-1',
+      action: SyncAction.update,
+      createdAt: DateTime(2024, 1, 2),
+    );
+
+    await queue.add(first);
+    await queue.add(second);
+
+    final operations = queue.getAll();
+    expect(operations, hasLength(1));
+    expect(operations.single.id, 'op-2');
+  });
+}

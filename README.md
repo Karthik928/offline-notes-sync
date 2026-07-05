@@ -505,12 +505,3 @@ Key engineering challenges tackled in this project:
 - conflict handling should isolate issues at entity boundaries
 - well-defined service layers simplify sync orchestration
 
----
-
-# Author
-
-Professional author section.
-
-- GitHub: `@your-github-handle`
-- LinkedIn: `linkedin.com/in/your-profile`
-- Email: `your.email@example.com`

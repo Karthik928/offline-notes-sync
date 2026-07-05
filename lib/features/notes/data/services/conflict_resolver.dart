@@ -7,12 +7,17 @@ import 'package:offline_notes_sync/features/notes/data/services/sync_logger.dart
 import '../../../../core/network/api_client.dart';
 
 class ConflictResolver {
-  ConflictResolver({ApiClient? apiClient, SyncLogger? logger})
-      : _apiClient = apiClient ?? ApiClient(),
-        _logger = logger ?? SyncLogger();
+  ConflictResolver({
+    ApiClient? apiClient,
+    SyncLogger? logger,
+    QueueService? queueService,
+  }) : _apiClient = apiClient ?? ApiClient(),
+       _logger = logger ?? SyncLogger(),
+       _queueService = queueService ?? QueueService.instance;
 
   final ApiClient _apiClient;
   final SyncLogger _logger;
+  final QueueService _queueService;
 
   Future<void> resolveKeepLocal(String noteId) async {
     final notesBox = HiveService.noteBox;
@@ -21,7 +26,7 @@ class ConflictResolver {
     try {
       if (note == null) {
         ConflictService.remove(noteId);
-        await QueueService().removeForNote(noteId);
+        await _queueService.removeForNote(noteId);
         return;
       }
 
@@ -46,7 +51,7 @@ class ConflictResolver {
 
         await notesBox.delete(note.id);
         ConflictService.remove(noteId);
-        await QueueService().removeForNote(noteId);
+        await _queueService.removeForNote(noteId);
         return;
       }
 
@@ -68,7 +73,7 @@ class ConflictResolver {
       await note.save();
 
       ConflictService.remove(noteId);
-      await QueueService().removeForNote(noteId);
+      await _queueService.removeForNote(noteId);
     } catch (error) {
       _logger.log('resolveKeepLocal failed for note $noteId -> $error');
       rethrow;
@@ -84,7 +89,7 @@ class ConflictResolver {
     try {
       if (note == null) {
         ConflictService.remove(noteId);
-        await QueueService().removeForNote(noteId);
+        await _queueService.removeForNote(noteId);
         return;
       }
 
@@ -92,7 +97,7 @@ class ConflictResolver {
         if (serverVersion.isDeleted) {
           await notesBox.delete(note.id);
           ConflictService.remove(noteId);
-          await QueueService().removeForNote(noteId);
+          await _queueService.removeForNote(noteId);
           return;
         }
 
@@ -107,7 +112,7 @@ class ConflictResolver {
       await note.save();
 
       ConflictService.remove(noteId);
-      await QueueService().removeForNote(noteId);
+      await _queueService.removeForNote(noteId);
     } catch (error) {
       _logger.log('resolveKeepServer failed for note $noteId -> $error');
       rethrow;

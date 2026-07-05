@@ -29,6 +29,37 @@ class _ConflictResolutionScreenState
     return DateFormat('MMM d, yyyy · h:mm a').format(date.toLocal());
   }
 
+  void _showLoadingDialog(String message) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        contentPadding: const EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
+            ),
+            const SizedBox(width: 16),
+            Expanded(child: Text(message)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _dismissLoadingDialog() {
+    if (!mounted) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
+  }
+
   Future<void> _resolve({
     required _ResolutionChoice choice,
     required Future<void> Function(String noteId) action,
@@ -37,6 +68,7 @@ class _ConflictResolutionScreenState
     if (_isBusy) return;
 
     setState(() => _resolving = choice);
+    _showLoadingDialog('Resolving conflict…');
 
     try {
       await action(widget.conflict.local.id);
@@ -45,11 +77,23 @@ class _ConflictResolutionScreenState
 
       ref.read(notesProvider.notifier).load();
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(successMessage)));
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Conflict resolved'),
+          content: Text(successMessage),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
 
-      Navigator.pop(context);
+      if (mounted) {
+        Navigator.pop(context);
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -58,6 +102,11 @@ class _ConflictResolutionScreenState
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Could not resolve conflict: $e')));
+    } finally {
+      _dismissLoadingDialog();
+      if (mounted && _resolving != null) {
+        setState(() => _resolving = null);
+      }
     }
   }
 
@@ -197,7 +246,7 @@ class _ConflictBanner extends StatelessWidget {
                 const Text(
                   'It changed on this device and on the server since the last sync. '
                   'Choose which version to keep — the other will be discarded.',
-                  maxLines: 3,
+                  maxLines: 4,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 13,

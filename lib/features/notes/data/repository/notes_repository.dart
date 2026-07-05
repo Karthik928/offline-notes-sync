@@ -11,7 +11,7 @@ import '../models/sync_status.dart';
 
 class NotesRepository {
   final box = HiveService.noteBox;
-  final QueueService queue = QueueService();
+  final QueueService queue = QueueService.instance;
 
   Future<bool> hasInternet() async {
     final result = await Connectivity().checkConnectivity();

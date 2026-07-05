@@ -19,6 +19,7 @@ class AddEditNoteScreen extends ConsumerStatefulWidget {
 class _AddEditNoteScreenState extends ConsumerState<AddEditNoteScreen> {
   late final TextEditingController titleController;
   late final TextEditingController bodyController;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -34,56 +35,101 @@ class _AddEditNoteScreenState extends ConsumerState<AddEditNoteScreen> {
     super.dispose();
   }
 
+  void _showLoadingDialog(String message) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        contentPadding: const EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
+            ),
+            const SizedBox(width: 16),
+            Expanded(child: Text(message)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _dismissLoadingDialog() {
+    if (!mounted) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
+  }
+
   Future<void> save() async {
+    if (_isSaving) return;
+
     final title = titleController.text.trim();
     final body = bodyController.text.trim();
 
     if (title.isEmpty && body.isEmpty) return;
 
+    setState(() => _isSaving = true);
+    _showLoadingDialog(widget.note == null ? 'Saving note…' : 'Updating note…');
+
     late final String savedNoteId;
 
-    if (widget.note == null) {
-      final now = DateTime.now();
+    try {
+      if (widget.note == null) {
+        final now = DateTime.now();
 
-      final note = Note(
-        id: const Uuid().v4(),
-        title: title,
-        body: body,
-        createdAt: now,
-        updatedAt: now,
-        lastSyncedAt: null,
-        syncStatus: SyncStatus.pending,
-        isDeleted: false,
-      );
+        final note = Note(
+          id: const Uuid().v4(),
+          title: title,
+          body: body,
+          createdAt: now,
+          updatedAt: now,
+          lastSyncedAt: null,
+          syncStatus: SyncStatus.pending,
+          isDeleted: false,
+        );
 
-      await ref.read(notesProvider.notifier).add(note);
-      savedNoteId = note.id;
-    } else {
-      final updated = widget.note!.copyWith(
-        title: title,
-        body: body,
-        updatedAt: DateTime.now(),
-        syncStatus: SyncStatus.pending,
-      );
+        await ref.read(notesProvider.notifier).add(note);
+        savedNoteId = note.id;
+      } else {
+        final updated = widget.note!.copyWith(
+          title: title,
+          body: body,
+          updatedAt: DateTime.now(),
+          syncStatus: SyncStatus.pending,
+        );
 
-      await ref.read(notesProvider.notifier).update(updated);
-      savedNoteId = updated.id;
+        await ref.read(notesProvider.notifier).update(updated);
+        savedNoteId = updated.id;
+      }
+
+      if (!mounted) return;
+
+      ref.read(notesProvider.notifier).load();
+
+      final savedNote = ref.read(notesRepositoryProvider).getById(savedNoteId);
+      final message = savedNote?.syncStatus == SyncStatus.synced
+          ? 'Synced successfully'
+          : 'Saved locally. Will sync automatically.';
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message)));
+
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } finally {
+      _dismissLoadingDialog();
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
-
-    if (!mounted) return;
-
-    ref.read(notesProvider.notifier).load();
-
-    final savedNote = ref.read(notesRepositoryProvider).getById(savedNoteId);
-    final message = savedNote?.syncStatus == SyncStatus.synced
-        ? 'Synced successfully'
-        : 'Saved locally. Will sync automatically.';
-
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-
-    Navigator.pop(context);
   }
 
   @override
@@ -105,6 +151,7 @@ class _AddEditNoteScreenState extends ConsumerState<AddEditNoteScreen> {
               TextField(
                 controller: titleController,
                 autofocus: true,
+                enabled: !_isSaving,
                 textInputAction: TextInputAction.next,
                 decoration: InputDecoration(
                   hintText: 'Title',
@@ -128,6 +175,7 @@ class _AddEditNoteScreenState extends ConsumerState<AddEditNoteScreen> {
               Expanded(
                 child: TextField(
                   controller: bodyController,
+                  enabled: !_isSaving,
                   expands: true,
                   maxLines: null,
                   minLines: null,
@@ -153,9 +201,15 @@ class _AddEditNoteScreenState extends ConsumerState<AddEditNoteScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: save,
-        icon: const Icon(Icons.check_rounded),
-        label: const Text('Save'),
+        onPressed: _isSaving ? null : save,
+        icon: _isSaving
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.check_rounded),
+        label: Text(_isSaving ? 'Saving…' : 'Save'),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       ),
     );

@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:offline_notes_sync/features/notes/data/models/note.dart';
 import 'package:offline_notes_sync/features/notes/data/models/sync_action.dart';
 import 'package:offline_notes_sync/features/notes/data/models/sync_status.dart';
+import 'package:offline_notes_sync/features/notes/data/models/sync_result.dart';
 import 'package:offline_notes_sync/features/notes/data/services/conflict_service.dart';
 import 'package:offline_notes_sync/features/notes/data/services/hive_service.dart';
 import 'package:offline_notes_sync/features/notes/data/services/queue_service.dart';
@@ -9,26 +10,34 @@ import 'package:offline_notes_sync/features/notes/data/services/sync_logger.dart
 import '../../../../core/network/api_client.dart';
 
 class PushSyncService {
-  PushSyncService({ApiClient? apiClient, SyncLogger? logger})
-      : _apiClient = apiClient ?? ApiClient(),
-        _logger = logger ?? SyncLogger();
+  PushSyncService({
+    ApiClient? apiClient,
+    SyncLogger? logger,
+    QueueService? queueService,
+  }) : _apiClient = apiClient ?? ApiClient(),
+       _logger = logger ?? SyncLogger(),
+       _queueService = queueService ?? QueueService.instance;
 
   final ApiClient _apiClient;
   final SyncLogger _logger;
+  final QueueService _queueService;
 
-  Future<void> pushQueue({QueueService? queueService}) async {
-    final queue = queueService ?? QueueService();
+  Future<PushResult> pushQueue({QueueService? queueService}) async {
+    final queue = queueService ?? _queueService;
     final operations = queue.getAll();
 
     if (operations.isEmpty) {
       _logger.log('pushQueue: queue empty, nothing to push');
-      return;
+      return const PushResult();
     }
 
     final notesBox = HiveService.noteBox;
+    var pushedOperations = 0;
+    var skippedConflicts = 0;
 
     for (final operation in operations) {
       var shouldRemoveFromQueue = true;
+      var operationCompleted = false;
 
       try {
         final Note? note = notesBox.get(operation.noteId);
@@ -40,6 +49,7 @@ class PushSyncService {
 
         if (note.syncStatus == SyncStatus.conflict) {
           _logger.log('pushQueue: skipping ${note.id}, still in conflict');
+          skippedConflicts++;
           continue;
         }
 
@@ -52,6 +62,7 @@ class PushSyncService {
             if (note.isDeleted) {
               ConflictService.remove(note.id);
               await notesBox.delete(note.id);
+              operationCompleted = true;
               break;
             }
 
@@ -76,6 +87,7 @@ class PushSyncService {
             ConflictService.remove(note.id);
 
             await note.save();
+            operationCompleted = true;
             break;
 
           case SyncAction.update:
@@ -97,12 +109,14 @@ class PushSyncService {
             ConflictService.remove(note.id);
 
             await note.save();
+            operationCompleted = true;
             break;
 
           case SyncAction.delete:
             if (note.serverId == null) {
               ConflictService.remove(note.id);
               await notesBox.delete(note.id);
+              operationCompleted = true;
               break;
             }
 
@@ -115,11 +129,16 @@ class PushSyncService {
             }
             ConflictService.remove(note.id);
             await notesBox.delete(note.id);
+            operationCompleted = true;
             break;
         }
 
         if (shouldRemoveFromQueue) {
           await queue.remove(operation.id);
+        }
+
+        if (operationCompleted) {
+          pushedOperations++;
         }
       } catch (error) {
         _logger.log('pushQueue: failed to push ${operation.id} -> $error');
@@ -129,6 +148,11 @@ class PushSyncService {
         _logger.log('Retry Count: ${operation.retryCount}');
       }
     }
+
+    return PushResult(
+      pushedOperations: pushedOperations,
+      skippedConflicts: skippedConflicts,
+    );
   }
 
   bool _isNotFound(Object error) {

@@ -1,4 +1,5 @@
 import 'package:offline_notes_sync/features/notes/data/models/note.dart';
+import 'package:offline_notes_sync/features/notes/data/models/sync_result.dart';
 import 'package:offline_notes_sync/features/notes/data/models/sync_status.dart';
 import 'package:offline_notes_sync/features/notes/data/services/conflict_service.dart';
 import 'package:offline_notes_sync/features/notes/data/services/hive_service.dart';
@@ -11,7 +12,7 @@ class ConflictDetector {
 
   final SyncLogger _logger;
 
-  Future<bool> detectConflicts({
+  Future<ConflictDetectionResult> detectConflicts({
     required ApiClient api,
     QueueService? queue,
   }) async {
@@ -24,7 +25,7 @@ class ConflictDetector {
     }
 
     final notesBox = HiveService.noteBox;
-    var hasAnyConflict = false;
+    var reconciledCount = 0;
 
     for (final json in serverNotes) {
       final record = _readServerRecord(json, noteId: 'server-record');
@@ -65,18 +66,20 @@ class ConflictDetector {
 
       if (localChanged && serverChanged) {
         if (_serverMatchesLocal(localNote, record)) {
+          final wasConflict = localNote.syncStatus == SyncStatus.conflict;
           localNote.serverId = _readServerId(record) ?? localNote.serverId;
           localNote.syncStatus = SyncStatus.synced;
           localNote.lastSyncedAt = serverUpdated;
           ConflictService.remove(localId);
           await localNote.save();
           await queue?.removeForNote(localId);
+          if (wasConflict) {
+            reconciledCount++;
+          }
           continue;
         }
 
         if (hasConflict(localNote, record, serverUpdated)) {
-          hasAnyConflict = true;
-
           final localSnapshot = localNote.copyWith();
 
           localNote.syncStatus = SyncStatus.conflict;
@@ -100,10 +103,16 @@ class ConflictDetector {
       }
     }
 
-    return hasAnyConflict;
+    return ConflictDetectionResult(
+      conflictCount: ConflictService.conflicts.length,
+      reconciledCount: reconciledCount,
+    );
   }
 
-  Map<String, dynamic> _readServerRecord(dynamic value, {required String noteId}) {
+  Map<String, dynamic> _readServerRecord(
+    dynamic value, {
+    required String noteId,
+  }) {
     if (value is Map<String, dynamic>) {
       return value;
     }

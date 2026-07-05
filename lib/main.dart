@@ -27,7 +27,7 @@ Future<void> main() async {
   await HiveService.init();
   final syncService = SyncService.instance;
 
-  unawaited(syncService.startListening());
+  await syncService.startListening();
 
   runApp(const ProviderScope(child: OfflineNotesApp()));
 }
@@ -39,7 +39,7 @@ class OfflineNotesApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'OFFLINE NOTES TEST 123',
+      title: 'Notes',
       themeMode: ThemeMode.system,
       theme: AppTheme.light,
       home: const HomeScreen(),

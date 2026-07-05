@@ -4,8 +4,7 @@ import '../models/note_conflict.dart';
 class ConflictService {
   static final List<NoteConflict> _conflicts = [];
 
-  static List<NoteConflict> get conflicts =>
-      List.unmodifiable(_conflicts);
+  static List<NoteConflict> get conflicts => List.unmodifiable(_conflicts);
 
   static void clear() {
     _conflicts.clear();
@@ -14,22 +13,17 @@ class ConflictService {
   static void add(Note local, Note server) {
     _conflicts.removeWhere((e) => e.local.id == local.id);
 
-    _conflicts.add(
-      NoteConflict(
-        local: local,
-        server: server,
-      ),
-    );
+    _conflicts.add(NoteConflict(local: local, server: server));
   }
 
   static void remove(String id) {
-    _conflicts.removeWhere(
-      (e) => e.local.id == id,
-    );
+    _conflicts.removeWhere((e) => e.local.id == id);
   }
 
   static void removeStaleConflicts(Set<String> activeNoteIds) {
-    _conflicts.removeWhere((conflict) => !activeNoteIds.contains(conflict.local.id));
+    _conflicts.removeWhere(
+      (conflict) => !activeNoteIds.contains(conflict.local.id),
+    );
   }
 
   static NoteConflict? getForNote(String noteId) {

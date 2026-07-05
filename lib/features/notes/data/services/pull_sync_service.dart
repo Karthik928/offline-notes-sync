@@ -1,4 +1,5 @@
 import 'package:offline_notes_sync/features/notes/data/models/note.dart';
+import 'package:offline_notes_sync/features/notes/data/models/sync_result.dart';
 import 'package:offline_notes_sync/features/notes/data/models/sync_status.dart';
 import 'package:offline_notes_sync/features/notes/data/services/conflict_service.dart';
 import 'package:offline_notes_sync/features/notes/data/services/hive_service.dart';
@@ -7,13 +8,13 @@ import '../../../../core/network/api_client.dart';
 
 class PullSyncService {
   PullSyncService({ApiClient? apiClient, SyncLogger? logger})
-      : _apiClient = apiClient ?? ApiClient(),
-        _logger = logger ?? SyncLogger();
+    : _apiClient = apiClient ?? ApiClient(),
+      _logger = logger ?? SyncLogger();
 
   final ApiClient _apiClient;
   final SyncLogger _logger;
 
-  Future<void> pullLatest() async {
+  Future<PullResult> pullLatest() async {
     final List<dynamic> serverNotes;
     try {
       serverNotes = await _apiClient.fetchNotes();
@@ -28,6 +29,7 @@ class PullSyncService {
 
     final activeServerNoteIds = <String>{};
     var canPruneMissingServerNotes = true;
+    var appliedChanges = 0;
 
     for (final json in serverNotes) {
       final record = _readServerRecord(json, noteId: 'server-record');
@@ -99,6 +101,7 @@ class PullSyncService {
         );
 
         await notesBox.put(note.id, note);
+        appliedChanges++;
         continue;
       }
 
@@ -126,6 +129,7 @@ class PullSyncService {
         localNote.lastSyncedAt = lastSyncedAt ?? serverUpdated;
         ConflictService.remove(localNote.id);
         await localNote.save();
+        appliedChanges++;
       }
     }
 
@@ -139,12 +143,18 @@ class PullSyncService {
             !activeServerNoteIds.contains(localNote.id)) {
           ConflictService.remove(localNote.id);
           await notesBox.delete(localNote.id);
+          appliedChanges++;
         }
       }
     }
+
+    return PullResult(appliedChanges: appliedChanges);
   }
 
-  Map<String, dynamic> _readServerRecord(dynamic value, {required String noteId}) {
+  Map<String, dynamic> _readServerRecord(
+    dynamic value, {
+    required String noteId,
+  }) {
     if (value is Map<String, dynamic>) {
       return value;
     }

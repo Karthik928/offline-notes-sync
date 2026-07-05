@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:offline_notes_sync/features/notes/data/models/sync_result.dart';
 import 'package:offline_notes_sync/features/notes/data/services/connectivity_service.dart';
 import 'package:offline_notes_sync/features/notes/data/services/conflict_detector.dart';
 import 'package:offline_notes_sync/features/notes/data/services/conflict_resolver.dart';
@@ -17,15 +18,24 @@ class SyncManager {
     ApiClient? apiClient,
     SyncLogger? logger,
     ConnectivityService? connectivityService,
+    QueueService? queueService,
   }) : _connectivityCheck = connectivityCheck ?? _defaultConnectivityCheck,
        _apiClient = apiClient ?? ApiClient(),
        _logger = logger ?? const SyncLogger(),
        _connectivityService = connectivityService ?? ConnectivityService() {
-    queue = QueueService();
+    queue = queueService ?? QueueService.instance;
     conflictDetector = ConflictDetector(logger: _logger);
-    pushSyncService = PushSyncService(apiClient: _apiClient, logger: _logger);
+    pushSyncService = PushSyncService(
+      apiClient: _apiClient,
+      logger: _logger,
+      queueService: queue,
+    );
     pullSyncService = PullSyncService(apiClient: _apiClient, logger: _logger);
-    conflictResolver = ConflictResolver(apiClient: _apiClient, logger: _logger);
+    conflictResolver = ConflictResolver(
+      apiClient: _apiClient,
+      logger: _logger,
+      queueService: queue,
+    );
   }
 
   final Future<bool> Function() _connectivityCheck;
@@ -70,7 +80,9 @@ class SyncManager {
     });
 
     _subscription = _connectivityService.stream.listen((results) async {
-      final isOnline = results.any((result) => result != ConnectivityResult.none);
+      final isOnline = results.any(
+        (result) => result != ConnectivityResult.none,
+      );
       if (!isOnline) {
         _lastConnectivityWasOnline = false;
         return;
@@ -81,6 +93,10 @@ class SyncManager {
         await sync();
       }
     });
+
+    if (_lastConnectivityWasOnline) {
+      await sync();
+    }
   }
 
   void dispose() {
@@ -98,41 +114,44 @@ class SyncManager {
     return current;
   }
 
-  Future<void> sync() async {
+  Future<SyncResult> sync() async {
     if (_isSyncing) {
       onSyncComplete?.call();
-      return;
+      return const SyncResult();
     }
 
-    await _runSerialized(() async {
+    return _runSerialized(() async {
       if (_isSyncing) {
         onSyncComplete?.call();
-        return;
+        return const SyncResult();
       }
 
       if (!await checkConnection()) {
         onSyncComplete?.call();
-        return;
+        return const SyncResult();
       }
 
       _isSyncing = true;
 
       try {
-        final hasConflict = await conflictDetector.detectConflicts(
+        final conflictResult = await conflictDetector.detectConflicts(
           api: _apiClient,
           queue: queue,
         );
 
-        if (hasConflict) {
-          _logger.log('sync: conflict(s) detected, halting before push');
-          return;
-        }
+        final pushResult = await pushSyncService.pushQueue(queueService: queue);
+        final pullResult = await pullSyncService.pullLatest();
 
-        await pushSyncService.pushQueue(queueService: queue);
-        await pullSyncService.pullLatest();
+        return SyncResult(
+          pushedOperations: pushResult.pushedOperations,
+          pulledChanges: pullResult.appliedChanges,
+          reconciledConflicts: conflictResult.reconciledCount,
+          conflictCount: conflictResult.conflictCount,
+        );
       } catch (error) {
         _logger.log('Sync failed');
         _logger.log(error.toString());
+        return const SyncResult();
       } finally {
         _isSyncing = false;
         _lastSyncAt = DateTime.now();

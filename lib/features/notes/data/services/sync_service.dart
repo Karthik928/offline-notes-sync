@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:offline_notes_sync/features/notes/data/models/sync_result.dart';
 import 'package:offline_notes_sync/features/notes/data/services/sync_manager.dart';
 
 import '../../../../core/network/api_client.dart';
@@ -19,15 +20,25 @@ class SyncService {
     _manager.onSyncComplete = value;
   }
 
-  SyncService({Future<bool> Function()? connectivityCheck})
-      : _connectivityCheck = connectivityCheck ?? _defaultConnectivityCheck {
-    _manager = SyncManager(connectivityCheck: connectivityCheck);
+  SyncService({
+    Future<bool> Function()? connectivityCheck,
+    QueueService? queueService,
+  }) : _connectivityCheck = connectivityCheck ?? _defaultConnectivityCheck {
+    _manager = SyncManager(
+      connectivityCheck: connectivityCheck,
+      queueService: queueService,
+    );
     queue = _manager.queue;
   }
 
-  SyncService._({Future<bool> Function()? connectivityCheck})
-      : _connectivityCheck = connectivityCheck ?? _defaultConnectivityCheck {
-    _manager = SyncManager(connectivityCheck: connectivityCheck);
+  SyncService._({
+    Future<bool> Function()? connectivityCheck,
+    QueueService? queueService,
+  }) : _connectivityCheck = connectivityCheck ?? _defaultConnectivityCheck {
+    _manager = SyncManager(
+      connectivityCheck: connectivityCheck,
+      queueService: queueService,
+    );
     queue = _manager.queue;
   }
 
@@ -47,18 +58,16 @@ class SyncService {
 
   Future<bool> checkConnection() async => _connectivityCheck();
 
-  Future<bool> detectConflicts() async => _manager.conflictDetector.detectConflicts(
-        api: api,
-        queue: queue,
-      );
+  Future<ConflictDetectionResult> detectConflicts() async =>
+      _manager.conflictDetector.detectConflicts(api: api, queue: queue);
 
-  Future<void> pushQueue() async => _manager.pushSyncService.pushQueue(
-        queueService: queue,
-      );
+  Future<PushResult> pushQueue() async =>
+      _manager.pushSyncService.pushQueue(queueService: queue);
 
-  Future<void> pullLatest() async => _manager.pullSyncService.pullLatest();
+  Future<PullResult> pullLatest() async =>
+      _manager.pullSyncService.pullLatest();
 
-  Future<void> sync() async => _manager.sync();
+  Future<SyncResult> sync() async => _manager.sync();
 
   Future<void> resolveConflictKeepLocal(String noteId) async =>
       _manager.resolveConflictKeepLocal(noteId);

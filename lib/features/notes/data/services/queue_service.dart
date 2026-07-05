@@ -5,6 +5,12 @@ import '../models/sync_action.dart';
 import 'hive_service.dart';
 
 class QueueService {
+  QueueService._();
+
+  static final QueueService instance = QueueService._();
+
+  factory QueueService() => instance;
+
   Box<SyncOperation>? _box;
 
   Box<SyncOperation> get box => _box ??= HiveService.operationQueue;
@@ -18,10 +24,9 @@ class QueueService {
   }
 
   Future<void> add(SyncOperation operation) async {
-    final existing = box.values
-        .where((queued) => queued.noteId == operation.noteId)
-        .toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final existing =
+        box.values.where((queued) => queued.noteId == operation.noteId).toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     switch (operation.action) {
       case SyncAction.create:

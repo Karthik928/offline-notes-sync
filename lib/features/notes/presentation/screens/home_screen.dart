@@ -1,4 +1,5 @@
-import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -23,14 +24,28 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isSyncing = false;
+  bool _hasAttemptedInitialSync = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_maybeRunInitialSync());
+    });
+  }
+
+  Future<void> _maybeRunInitialSync() async {
+    if (_hasAttemptedInitialSync || _isSyncing) return;
+
+    _hasAttemptedInitialSync = true;
+    await _handleSync(showFeedback: false);
+  }
 
   Future<void> _handleSync({bool showFeedback = true}) async {
     if (_isSyncing) return;
 
-    final connectivity = await Connectivity().checkConnectivity();
-    final connected = connectivity.any(
-      (result) => result != ConnectivityResult.none,
-    );
+    final connected = await SyncService.instance.checkConnection();
 
     if (!connected) {
       if (showFeedback && mounted) {
@@ -48,26 +63,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() => _isSyncing = true);
 
     try {
-      await SyncService.instance.sync();
+      final result = await SyncService.instance.sync();
 
       if (mounted) {
         ref.read(notesProvider.notifier).load();
         if (showFeedback) {
-          final hasConflicts = ref
-              .read(notesProvider)
-              .any((note) => note.syncStatus == SyncStatus.conflict);
-          final message = hasConflicts
-              ? 'Sync paused. Resolve conflicts to continue.'
-              : 'Synced successfully';
           ScaffoldMessenger.of(context)
             ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text(message)));
+            ..showSnackBar(SnackBar(content: Text(result.feedbackMessage)));
         }
       }
     } finally {
       if (mounted) {
         setState(() => _isSyncing = false);
       }
+    }
+  }
+
+  Future<void> _navigateToAddNote() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AddEditNoteScreen()),
+    );
+
+    if (mounted) {
+      ref.read(notesProvider.notifier).load();
     }
   }
 
@@ -109,7 +129,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text('Offline notes'),
+            const Text('Notes'),
             const SizedBox(height: 2),
             Text(
               _summaryLine(notes.length, pendingCount, conflictCount),
@@ -164,10 +184,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: notes.isEmpty
               ? ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  children: const [
-                    SizedBox(height: 48),
-                    _EmptyView(),
-                    SizedBox(height: 48),
+                  children: [
+                    const SizedBox(height: 32),
+                    _EmptyView(onCreate: _navigateToAddNote),
+                    const SizedBox(height: 32),
                   ],
                 )
               : ListView.builder(
@@ -182,14 +202,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const AddEditNoteScreen()),
-          );
-
-          ref.read(notesProvider.notifier).load();
-        },
+        onPressed: _navigateToAddNote,
         child: const Icon(Icons.add_rounded),
       ),
     );
@@ -197,7 +210,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 }
 
 class _EmptyView extends StatelessWidget {
-  const _EmptyView();
+  final VoidCallback onCreate;
+
+  const _EmptyView({required this.onCreate});
 
   @override
   Widget build(BuildContext context) {
@@ -208,19 +223,19 @@ class _EmptyView extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 104,
-              height: 104,
+              width: 92,
+              height: 92,
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.sticky_note_2_outlined,
-                size: 56,
+                size: 48,
                 color: AppColors.primary,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             const Text(
               'No notes yet',
               style: TextStyle(
@@ -231,18 +246,13 @@ class _EmptyView extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Create your first note. Notes automatically sync when online.',
+              'Use the button below to add a note. Notes sync automatically when online.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 22),
             FilledButton.icon(
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AddEditNoteScreen()),
-                );
-              },
+              onPressed: onCreate,
               icon: const Icon(Icons.add_rounded),
               label: const Text('Create note'),
             ),
@@ -323,7 +333,7 @@ class _AnimatedNoteRowState extends ConsumerState<_AnimatedNoteRow>
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete note?'),
-        content: const Text('This note will be removed from your local list.'),
+        content: const Text('This note will be removed permanently.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
